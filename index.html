@@ -42,7 +42,7 @@ button.sec{padding:9px 12px;font-size:13px;border:1px solid #CBD5E1;border-radiu
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 /* ▼▼ PEGA AQUÍ la URL de tu aplicación web de Apps Script (la que termina en /exec) ▼▼ */
-var API_URL = 'https://script.google.com/macros/s/AKfycbxKg16GS-jzzRfo353jU6Y0vnyFR7R3LmFyWa6dQFOVuosETQed_iVXki3wSlrdhUAV/exec';
+var API_URL = 'https://script.google.com/macros/s/AKfycbyZsjBGMZQ9knb9Cjp_pydi9nHx4vWrZbdmxrzpVL2LOHMfS61mi-oxE6Bwma-W_xKX/exec';
 var MODOS = {ING:['📥 INGRESO','#2E8B6A'],SAL:['📤 SALIDA','#C0504D'],DEV:['↩ DEVOLUC.','#7030A0'],CON:['🔍 KARDEX','#0E7490']};
 var modo=localStorage.getItem('cdh_modo')||'ING', pin='', item=null, qr=null, ultimo='', ultimoT=0;
 function $(i){return document.getElementById(i)}
