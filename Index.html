@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Escáner CDH</title>
+<style>
+:root{--az:#1F3864;--ve:#2E8B6A;--ro:#C0504D;--mo:#7030A0;--ci:#0E7490}
+*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:10px;background:#F4F6FA;color:#1F2937}
+h1{font-size:16px;color:var(--az);margin:0 0 8px}label{display:block;font-size:11px;font-weight:bold;color:#64748B;margin-top:6px}
+input,select{width:100%;padding:11px;font-size:16px;border:1px solid #CBD5E1;border-radius:8px;margin:3px 0;background:#fff}
+.modos{display:flex;gap:4px;margin-bottom:8px}.modos button{flex:1;padding:10px 0;border:2px solid #CBD5E1;border-radius:10px;background:#fff;font-weight:bold;font-size:12px}
+.modos button.on{color:#fff;border-color:transparent}
+button.main{width:100%;padding:14px;font-size:16px;font-weight:bold;color:#fff;border:0;border-radius:10px;margin-top:8px}button.main:disabled{opacity:.5}
+button.sec{padding:9px 12px;font-size:13px;border:1px solid #CBD5E1;border-radius:8px;background:#fff}
+#reader{width:100%;border-radius:8px;overflow:hidden;display:none}
+.card{display:none;background:#fff;border:1px solid #CBD5E1;border-left:6px solid var(--az);border-radius:10px;padding:10px;margin:8px 0}
+.card .d{font-size:16px;font-weight:bold}.card small{color:#475569}
+.msg{padding:8px;border-radius:8px;font-size:13px;margin:8px 0;background:#E2E8F0}.ok{background:#DCFCE7;color:#14532D}.err{background:#FEE2E2;color:#7F1D1D;font-weight:bold}
+.mov{font-size:12px;padding:4px 0;border-bottom:1px solid #E2E8F0}.fila{display:flex;gap:6px}.fila>div{flex:1}
+.chk{display:flex;gap:8px;align-items:center;font-size:12px;margin:8px 0}.chk input{width:auto;margin:0}
+#pin{font-size:26px;letter-spacing:10px;text-align:center}
+</style></head><body>
+<h1>🔎 Escáner CDH</h1>
+<div id="gate"><label>🔒 PIN (4 números)</label><input id="pin" type="password" inputmode="numeric" maxlength="4"><button class="main" style="background:var(--az)" onclick="entrar()">Entrar</button><div id="gmsg"></div></div>
+<div id="app" style="display:none">
+ <div class="modos" id="modos"></div>
+ <button class="sec" id="bCam" onclick="camara()">📷 Abrir cámara</button>
+ <div id="reader"></div>
+ <label>🔑 Código (se llena solo al escanear; también puedes escribirlo)</label>
+ <div class="fila"><input id="cod" autocapitalize="characters" placeholder="E1-31 · o parte del nombre"><button class="sec" onclick="buscar($('cod').value)">🔍</button></div>
+ <div id="lista"></div>
+ <div class="card" id="card"><div id="cid" style="font-size:12px;font-weight:bold;color:#64748B"></div><div class="d" id="cdesc"></div><small id="cdato"></small><div id="movs"></div></div>
+ <div id="form">
+  <label>👤 Responsable</label><input id="resp">
+  <label>🔢 Cantidad</label><input id="cant" type="number" inputmode="decimal" step="any" value="1">
+  <div id="fING"><label>📋 Tipo de ingreso</label><select id="tipoIng"></select><div class="fila"><div><label>💰 Precio total S/</label><input id="ptot" type="number" inputmode="decimal" step="any"></div><div><label>🧾 Factura</label><input id="factura"></div></div></div>
+  <div id="fSAL"><label>📑 Tipo de salida</label><select id="tipoSol"></select><label>📋 Motivo</label><select id="motivo"></select><label>🏢 Área</label><select id="area"></select></div>
+  <label>📝 Detalle (opcional)</label><input id="detalle">
+  <div class="chk"><input type="checkbox" id="auto"><label style="margin:0">⚡ Registrar apenas escanee (usa esa cantidad y opciones)</label></div>
+  <button class="main" id="bReg" onclick="registrar()">✅ REGISTRAR</button>
+ </div>
+ <div class="msg" id="msg">Abre la cámara y apunta al código.</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+/* ▼▼ PEGA AQUÍ la URL de tu aplicación web de Apps Script (la que termina en /exec) ▼▼ */
+var API_URL = 'https://script.google.com/macros/s/AKfycbxKg16GS-jzzRfo353jU6Y0vnyFR7R3LmFyWa6dQFOVuosETQed_iVXki3wSlrdhUAV/exec';
+var MODOS = {ING:['📥 INGRESO','#2E8B6A'],SAL:['📤 SALIDA','#C0504D'],DEV:['↩ DEVOLUC.','#7030A0'],CON:['🔍 KARDEX','#0E7490']};
+var modo=localStorage.getItem('cdh_modo')||'ING', pin='', item=null, qr=null, ultimo='', ultimoT=0;
+function $(i){return document.getElementById(i)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function msg(t,c){var m=$('msg');m.className='msg '+(c||'');m.textContent=t}
+function api(fn,args){
+  return fetch(API_URL,{method:'POST',body:JSON.stringify({fn:fn,args:args})}).then(function(r){return r.json()}).then(function(r){if(!r.ok)throw new Error(r.error);return r.data});
+}
+function fill(id,a){$(id).innerHTML='<option value="">— elige —</option>'+a.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')}
+function entrar(){
+  pin=$('pin').value.trim(); if(!/^\d{4}$/.test(pin)){$('gmsg').innerHTML='<div class="msg err">Escribe los 4 números.</div>';return}
+  if(API_URL.indexOf('PEGA_')===0){$('gmsg').innerHTML='<div class="msg err">Falta pegar la URL /exec en el archivo (variable API_URL).</div>';return}
+  api('panelInit',[pin]).then(function(r){
+    $('gate').style.display='none';$('app').style.display='block';
+    fill('tipoIng',r.tiposIng);fill('tipoSol',r.tiposSol);fill('motivo',r.motivos);fill('area',r.areas);
+    $('resp').value=localStorage.getItem('cdh_resp')||r.responsable||'';
+    var b='';Object.keys(MODOS).forEach(function(k){b+='<button id="m'+k+'" onclick="setModo(\''+k+'\')">'+MODOS[k][0]+'</button>'});$('modos').innerHTML=b;
+    setModo(modo);
+  }).catch(function(e){$('gmsg').innerHTML='<div class="msg err">❌ '+esc(e.message)+'</div>';$('pin').value=''});
+}
+function setModo(m){
+  modo=m;localStorage.setItem('cdh_modo',m);          // el modo queda guardado en este celular
+  Object.keys(MODOS).forEach(function(k){var b=$('m'+k);b.className=k===m?'on':'';b.style.background=k===m?MODOS[k][1]:'#fff'});
+  $('fING').style.display=m==='ING'?'block':'none';$('fSAL').style.display=m==='SAL'?'block':'none';
+  $('form').style.display=m==='CON'?'none':'block';$('bReg').style.background=MODOS[m][1];
+  $('bReg').textContent={ING:'✅ REGISTRAR INGRESO',SAL:'✅ REGISTRAR SALIDA',DEV:'✅ REGISTRAR DEVOLUCIÓN'}[m]||'';
+  if(item&&m==='CON')consultar(item.id);
+}
+function camara(){
+  if(qr){return parar()}
+  if(typeof Html5Qrcode==='undefined'){msg('No cargó la librería del escáner. Revisa tu conexión.','err');return}
+  $('reader').style.display='block';$('bCam').textContent='⏹ Cerrar cámara';
+  var F=Html5QrcodeSupportedFormats;
+  qr=new Html5Qrcode('reader',{formatsToSupport:[F.CODE_39,F.CODE_128,F.QR_CODE,F.EAN_13],experimentalFeatures:{useBarCodeDetectorIfSupported:true}});
+  qr.start({facingMode:'environment'},{fps:10,qrbox:{width:260,height:140}},function(t){
+    t=String(t).replace(/^\*+|\*+$/g,'').toUpperCase();var n=Date.now();
+    if(t===ultimo&&n-ultimoT<3000)return;ultimo=t;ultimoT=n;      // evita leer el mismo código dos veces seguidas
+    if(navigator.vibrate)navigator.vibrate(120);$('cod').value=t;buscar(t);
+  },function(){}).catch(function(e){msg('No se pudo abrir la cámara: '+e+'. Permite la cámara para este sitio en Chrome (candado de la barra de direcciones).','err');parar()});
+}
+function parar(){if(qr){qr.stop().catch(function(){});qr=null}$('reader').style.display='none';$('bCam').textContent='📷 Abrir cámara'}
+function buscar(v){
+  v=String(v||'').trim();if(!v)return;msg('Buscando…');
+  api('resolver',[v,pin]).then(function(r){
+    $('lista').innerHTML='';
+    if(r.tipo==='exacto')elegir(r.item);
+    else if(r.tipo==='lista'){r.items.forEach(function(it){var d=document.createElement('div');d.className='card';d.style.display='block';d.innerHTML='<b>'+esc(it.id)+'</b> · '+esc(it.desc)+'<br><small>'+esc(it.estante)+' · stock '+esc(it.stock)+'</small>';d.onclick=function(){$('lista').innerHTML='';elegir(it)};$('lista').appendChild(d)});msg('Toca el ítem correcto.')}
+    else{item=null;$('card').style.display='none';msg('❌ No encontré "'+v+'".','err')}
+  }).catch(function(e){msg('❌ '+e.message,'err')});
+}
+function elegir(it){
+  item=it;$('card').style.display='block';$('movs').innerHTML='';
+  $('cid').textContent=it.id+' · '+it.tipo;$('cdesc').textContent=it.desc;
+  $('cdato').textContent='📍 '+it.estante+'  |  Stock: '+it.stock+'  |  '+it.alerta+(it.tipo==='REUTILIZABLE'?'  |  Fuera sin devolver: '+it.fuera:'');
+  if(modo==='CON')return consultar(it.id);
+  msg('Ítem listo. Indica la cantidad y registra.','ok');
+  if($('auto').checked)registrar(); else{$('cant').focus();$('cant').select()}
+}
+function consultar(id){
+  api('consultaKardex',[id,pin]).then(function(r){
+    $('movs').innerHTML='<hr>'+(r.movs.length?r.movs.map(function(m){return '<div class="mov">'+(m.t==='ING'?'📥':'📤')+' <b>'+esc(m.fecha)+'</b> · '+esc(m.cant)+(m.dev?' (dev. '+esc(m.dev)+')':'')+' · '+esc(m.det)+' · '+esc(m.quien)+'</div>'}).join(''):'<small>Sin movimientos registrados.</small>');
+    msg('Kardex de '+id+' (últimos movimientos).','ok');
+  }).catch(function(e){msg('❌ '+e.message,'err')});
+}
+function registrar(){
+  if(!item){msg('Primero escanea un ítem.','err');return}
+  var c=parseFloat(String($('cant').value).replace(',','.'));if(!(c>0)){msg('Cantidad mayor que 0.','err');return}
+  var resp=$('resp').value.trim();if(!resp){msg('Escribe el responsable.','err');return}
+  if(modo==='ING'&&!$('tipoIng').value){msg('Elige el tipo de ingreso.','err');return}
+  if(modo==='SAL'&&(!$('tipoSol').value||!$('motivo').value||!$('area').value)){msg('Elige tipo de salida, motivo y área.','err');return}
+  localStorage.setItem('cdh_resp',resp);$('bReg').disabled=true;
+  var p={modo:modo,id:item.id,cant:c,resp:resp,tipoIng:$('tipoIng').value,ptot:$('ptot').value,factura:$('factura').value.trim(),tipoSol:$('tipoSol').value,motivo:$('motivo').value,area:$('area').value,detalle:$('detalle').value.trim()};
+  api('registrarMovimiento',[p,pin]).then(function(r){
+    $('bReg').disabled=false;msg('✅ '+r.msg+'  Stock actual: '+r.stock+' '+r.alerta,'ok');
+    item=null;$('card').style.display='none';$('cod').value='';$('cant').value=1;$('detalle').value='';$('ptot').value='';$('factura').value='';
+  }).catch(function(e){$('bReg').disabled=false;msg('❌ '+e.message,'err')});
+}
+$('cod').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();buscar($('cod').value)}});
+$('pin').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();entrar()}});
+</script></body></html>
